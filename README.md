@@ -6,7 +6,7 @@ This repository implements a Verilog-based sensor-hub simulator where an FPGA re
 
 ---
 
-## 📁 Repository Contents
+## Repository Contents
 
 ### Core Modules
 
@@ -19,7 +19,7 @@ This repository implements a Verilog-based sensor-hub simulator where an FPGA re
 
 ---
 
-## � System Architecture and Data Flow
+## System Architecture and Data Flow
 
 ### Overall Workflow
 
@@ -66,7 +66,7 @@ This repository implements a Verilog-based sensor-hub simulator where an FPGA re
 
 ---
 
-## 💻 Detailed Code Explanations
+## Detailed Code Explanations
 
 ### 1. I²C Slave Module (`i2c_slave_dummy.v`)
 
@@ -284,7 +284,7 @@ for (i = 0; i < 11; i++) {
 
 ---
 
-## �🚀 Quick Start — Simulation with Icarus Verilog
+## Quick Start — Simulation with Icarus Verilog
 
 ### 1. Install Tools (macOS)
 
@@ -314,7 +314,7 @@ gtkwave uart_tx.vcd
 
 ---
 
-## 🔧 Vivado Setup and Simulation
+## Vivado Setup and Simulation
 
 ### For Simulation (No Hardware Required)
 
@@ -352,7 +352,7 @@ gtkwave uart_tx.vcd
 
 ---
 
-## 📹 Recording Vivado Simulation (Optional)
+## Recording Vivado Simulation (Optional)
 
 **Tools:** QuickTime Player (macOS) or OBS Studio
 
@@ -370,7 +370,7 @@ gtkwave uart_tx.vcd
 
 ---
 
-## 🧪 Testing and Validation
+## Testing and Validation
 
 ### I²C Slave Testing
 
@@ -389,7 +389,7 @@ gtkwave uart_tx.vcd
 
 ---
 
-## 📚 Learning Resources
+## Learning Resources
 
 ### Vivado Installation and Setup
 
@@ -415,7 +415,7 @@ gtkwave uart_tx.vcd
 
 ---
 
-## 👥 Contributors
+## Contributors
 
 ### Ronil Borah — I²C Implementation
 
@@ -561,7 +561,7 @@ _Shreya will add her contribution details here_
 
 ---
 
-## 🔮 Future Improvements
+## Future Improvements
 
 - Add I²C master module to complete full system integration
 - Implement multi-byte I²C read/write transactions
@@ -572,7 +572,7 @@ _Shreya will add her contribution details here_
 
 ---
 
-## 📝 Project Context
+## Project Context
 
 This project is part of a digital systems design course focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
 
@@ -583,7 +583,3 @@ This project is part of a digital systems design course focusing on serial commu
 - Vivado simulation and synthesis workflow
 
 ---
-
-**License:** MIT (or specify your license)  
-**Course:** Digital Systems Design  
-**Institution:** (Add your institution name)
