@@ -419,22 +419,141 @@ gtkwave uart_tx.vcd
 
 ### Ronil Borah — I²C Implementation
 
-**Contributions:**
+#### Problem Statement and Objectives
 
-- Implemented `i2c_slave_dummy.v` module with FSM-based I²C protocol handling
-- Designed proper START/STOP condition detection (asynchronous, SCL-independent)
-- Implemented SDA tri-state control and open-drain signaling
-- Created `tb_i2c_slave_dummy.v` testbench with I²C transaction tasks
-- Validated I²C timing and ACK/NACK behavior in simulation
-- Set up Vivado project and ran behavioral simulations
-- Captured and analyzed I²C waveforms in Vivado
+The primary objective was to implement an I²C slave device that simulates a temperature sensor. The slave needed to:
 
-**Key Technical Details:**
+- Respond to a specific I²C address (0x48)
+- Properly detect START and STOP conditions
+- Handle address matching and ACK generation
+- Transmit a fixed temperature value (25°C = 0x19 hex)
+- Implement correct open-drain signaling for the SDA line
 
-- Used separate FSM states for IDLE, ADDR, ACK_ADDR, SEND_DATA, WAIT_ACK
-- Implemented shift register for serial-to-parallel conversion
-- Proper handling of SDA sampling on SCL rising edge
-- ACK generation by pulling SDA low
+#### How I Tackled the Problem
+
+**1. Understanding I²C Protocol Fundamentals**
+
+- Studied I²C timing diagrams to understand START/STOP conditions
+- Learned that START/STOP are asynchronous events (SDA transitions while SCL is HIGH)
+- Recognized that I²C uses open-drain outputs requiring tri-state logic
+
+**2. FSM Design Approach**
+
+- Broke down the I²C slave operation into discrete states:
+  - **IDLE**: Wait for START condition
+  - **ADDR**: Receive 7-bit address + R/W bit
+  - **ACK_ADDR**: Pull SDA low if address matches
+  - **SEND_DATA**: Shift out temperature byte (MSB first)
+  - **WAIT_ACK**: Release SDA and wait for master's ACK
+
+**3. Critical Implementation Challenges and Solutions**
+
+**Challenge 1: START/STOP Detection**
+
+- **Problem**: Initial attempts clocked START/STOP detection on SCL edge, but these are asynchronous events
+- **Solution**: Implemented separate combinational logic to detect SDA transitions while SCL is HIGH
+
+```verilog
+assign start_cond = (sda_prev == 1'b1) && (sda_in == 1'b0) && (scl == 1'b1);
+assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
+```
+
+**Challenge 2: Open-Drain SDA Control**
+
+- **Problem**: Initially tried to drive SDA as a regular output, causing bus contention in simulation
+- **Solution**: Used `sda_oe` (output enable) signal - when HIGH, pull SDA low; when LOW, release to high-impedance
+- Testbench models pull-up resistor with tri-state logic
+
+**Challenge 3: Bit Timing and Sampling**
+
+- **Problem**: Confusion about when to sample vs. drive SDA relative to SCL edges
+- **Solution**: Master samples SDA on SCL rising edge, slave changes SDA on SCL falling edge
+
+#### Proposed Solution and Implementation
+
+**Files Created:**
+
+- `i2c_slave_dummy.v` - FSM-based I²C slave with proper protocol handling
+- `tb_i2c_slave_dummy.v` - Comprehensive testbench with I²C master tasks
+
+**Key Features Implemented:**
+
+- Finite State Machine with 5 states for protocol handling
+- Asynchronous START/STOP detection independent of SCL clock
+- Address comparison logic (7-bit address + R/W bit)
+- Shift register for serial data transmission (MSB first)
+- Proper SDA tri-state control using output enable signal
+- Bit counter for tracking 8-bit transfers
+
+**Validation and Testing:**
+
+- Created testbench that acts as I²C master
+- Implemented tasks: `i2c_start()`, `i2c_stop()`, `i2c_write_byte()`, `i2c_read_byte()`
+- Verified waveforms showing correct START/STOP timing
+- Confirmed ACK generation on address match
+- Validated data byte transmission (0x19)
+
+#### Changes from Initial Objectives
+
+**Achieved:**
+✅ Complete I²C slave implementation with FSM
+✅ Proper START/STOP detection
+✅ Open-drain signaling with tri-state control
+✅ Address matching and ACK generation
+✅ Data byte transmission
+✅ Comprehensive testbench with waveform validation
+✅ Vivado project setup and behavioral simulation
+
+**Limitations/Not Implemented:**
+
+- Multi-byte register reads (only single-byte response)
+- Clock stretching (slave holding SCL low)
+- General call addressing
+- 10-bit addressing mode
+- I²C master module (only slave implemented)
+
+These features were beyond the scope of the initial mini-project requirements and can be added as future enhancements.
+
+#### Resources Used
+
+**Primary Resources:**
+
+- **Chatbots (ChatGPT/GitHub Copilot)**: Used extensively when debugging issues, especially for:
+  - Understanding START/STOP condition detection logic
+  - Resolving tri-state/open-drain modeling in Verilog
+  - Debugging FSM state transitions
+  - Fixing testbench timing issues
+
+**YouTube Videos:**
+
+- [I²C Basics](https://www.youtube.com/watch?v=OHzX6BCqVr8) - Understanding protocol fundamentals
+- [I²C Implementation Playlist](https://youtube.com/playlist?list=PLIA9XWvqXXMzzO0g6bZTEtjTBv6sbKYpN&si=A2Mh8u2Ojac_JWYw) - FSM design patterns
+
+**Development Tools:**
+
+- Icarus Verilog for initial simulation and debugging
+- GTKWave for waveform analysis
+- Vivado for behavioral simulation and waveform capture
+
+**Approach:**
+When encountering issues, I primarily relied on chatbots to:
+
+1. Explain error messages and synthesis warnings
+2. Suggest fixes for timing violations
+3. Provide examples of proper I²C tri-state modeling
+4. Debug testbench issues
+
+YouTube videos helped build foundational understanding before implementation.
+
+#### Time Spent
+
+Approximately 12-15 hours over 3 days:
+
+- Day 1: Protocol study and initial FSM design (4 hours)
+- Day 2: Implementation, debugging START/STOP detection (5 hours)
+- Day 3: Testbench creation, Vivado setup, waveform validation (4 hours)
+
+---
 
 ### Shreya Meher — UART Implementation
 
