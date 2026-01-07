@@ -1,135 +1,470 @@
 # Sensor Hub Simulator — I²C Temperature Sensor + UART Output
 
-This repository implements a Verilog-based sensor-hub simulator: the FPGA logic acts as an I²C master, reads a fixed temperature from a dummy I²C slave, converts the value to ASCII, and transmits it over UART. The expected runtime output (serial terminal) is:
+This repository implements a Verilog-based sensor-hub simulator where an FPGA reads temperature data from an I²C temperature sensor (simulated by a dummy slave module), converts the value to ASCII, and transmits it over UART to a PC terminal.
 
-Temp = 25
+**Expected Output:** `Temp = 25`
 
-Contents and key modules
+---
 
-- `ascii_encoder.v` — converts numeric values into ASCII bytes.
-- `ascii_uart_sender.v` — sequences ASCII bytes and hands them to the UART transmitter.
-- `buildstring.v` — helpers for building ASCII strings from numeric values.
-- `i2c_slave_dummy.v` — simple I²C slave model that returns a fixed temperature (25 decimal / 0x19 hex).
-- `tb_i2c_slave_dummy.v` — testbench for the I²C slave.
-- `tb_ascii_uart_sender.v` — end-to-end testbench connecting I2C dummy -> ASCII builder -> UART TX.
-- `uart_tx.v` — UART transmitter core (baud generator, FSM, shift register).
-- `uart_tx_tb.v` — UART transmitter testbench.
+## 📁 Repository Contents
 
-Quick start — simulation (Icarus Verilog)
+### Core Modules
 
-1. Install tools (macOS):
+- **`i2c_slave_dummy.v`** — I²C slave device that simulates a temperature sensor, responds to address `0x48` and returns a fixed temperature value (25°C / 0x19 hex)
+- **`tb_i2c_slave_dummy.v`** — Testbench for I²C slave module with START/STOP conditions and byte transfer validation
+- **`uart_tx.v`** — UART transmitter with baud rate generator, FSM-based transmission control, and shift register
+- **`tb_uart_tx.v`** — Testbench for UART transmitter module
+- **`ascii_encoder.v`** — Converts binary temperature value to ASCII digit characters (tens and ones place)
+- **`buildstring.v`** — Builds the complete ASCII string "Temp = 25\r\n" for UART transmission
+
+---
+
+## � System Architecture and Data Flow
+
+### Overall Workflow
+
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐      ┌──────────┐
+│   I²C       │ read │   ASCII      │ feed │ buildstring │ send │  UART    │
+│   Slave     ├─────→│   Encoder    ├─────→│   Module    ├─────→│  TX      │──→ PC
+│ (Sensor)    │ 0x19 │              │ chars│             │ bits │          │
+└─────────────┘      └──────────────┘      └─────────────┘      └──────────┘
+     ↑                                                                  ↓
+     │                                                                  │
+   SCL/SDA                                                          tx (serial)
+```
+
+### Step-by-Step Data Flow
+
+1. **I²C Read Transaction** (`i2c_slave_dummy.v`)
+
+   - Master sends START condition
+   - Master transmits slave address (0x48) + Read bit
+   - Slave acknowledges (ACK)
+   - Slave transmits temperature data byte (0x19 = 25 decimal)
+   - Master acknowledges
+   - Master sends STOP condition
+
+2. **Binary to ASCII Conversion** (`ascii_encoder.v`)
+
+   - Input: 8-bit binary value (25 = 0x19)
+   - Tens digit: 25 ÷ 10 = 2 → ASCII '2' (0x32)
+   - Ones digit: 25 % 10 = 5 → ASCII '5' (0x35)
+   - Output: Two ASCII characters
+
+3. **String Building** (`buildstring.v`)
+
+   - Constructs complete message: "Temp = 25\r\n"
+   - Character sequence: 'T', 'e', 'm', 'p', ' ', '=', ' ', '2', '5', '\r', '\n'
+   - Selects character based on index input
+
+4. **UART Transmission** (`uart_tx.v`)
+   - Each ASCII character is transmitted serially
+   - Frame format: [START(0)] + [8 data bits, LSB first] + [STOP(1)]
+   - Baud rate controlled by clock divider
+   - Example: 'T' (0x54) → bits: 0 0 0 1 0 1 0 1 0 1
+
+---
+
+## 💻 Detailed Code Explanations
+
+### 1. I²C Slave Module (`i2c_slave_dummy.v`)
+
+**Purpose:** Simulates an I²C temperature sensor that responds to read requests with a fixed temperature value.
+
+**Key Components:**
+
+```verilog
+// FSM States
+IDLE      → Waiting for START condition
+ADDR      → Receiving 7-bit address + R/W bit
+ACK_ADDR  → Acknowledging address match
+SEND_DATA → Transmitting temperature byte
+WAIT_ACK  → Waiting for master's ACK
+```
+
+**Critical Implementation Details:**
+
+- **START/STOP Detection (Asynchronous):**
+
+  ```verilog
+  assign start_cond = (sda_prev == 1'b1) && (sda_in == 1'b0) && (scl == 1'b1);
+  assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
+  ```
+
+  - START: SDA falls while SCL is HIGH
+  - STOP: SDA rises while SCL is HIGH
+  - These are detected independently of SCL edges
+
+- **Open-Drain Signaling:**
+
+  - `sda_oe` (output enable) controls when slave pulls SDA low
+  - When `sda_oe = 1`, slave pulls SDA to 0 (ACK or data bit = 0)
+  - When `sda_oe = 0`, SDA is released (high-impedance, pulled high by external resistor)
+
+- **Address Matching:**
+
+  - Slave address: 0x48 (7 bits)
+  - Compares received address with `SLAVE_ADDR`
+  - Only responds if address matches
+
+- **Data Transmission:**
+  - Temperature data: 25°C = 0x19 (hexadecimal) = 0001 1001 (binary)
+  - Transmitted MSB first on falling SCL edge
+  - Uses shift register to serialize the byte
+
+**Timing Diagram:**
+
+```
+SCL:  ──┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌───
+        │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │
+SDA:  ──┘ │0│1│0│0│1│0│0│0│ │ ACK │ DATA... │ STOP
+START    └─┴─┴─┴─┴─┴─┴─┴─┴─┘       └─────────┘
+         Address (0x48) + R
+```
+
+---
+
+### 2. UART Transmitter Module (`uart_tx.v`)
+
+**Purpose:** Serializes 8-bit data bytes and transmits them over a single wire at a specified baud rate.
+
+**Key Components:**
+
+```verilog
+// FSM States
+IDLE  → Waiting for tx_start signal, tx line held HIGH
+START → Transmit start bit (0)
+DATA  → Shift out 8 data bits (LSB first)
+STOP  → Transmit stop bit (1)
+```
+
+**Baud Rate Generation:**
+
+```verilog
+BAUD_DIV = CLK_FREQ / BAUD_RATE
+// Example: 1MHz / 9600 = 104 clock cycles per bit
+```
+
+**Transmission Process:**
+
+1. Wait for `tx_start` signal (IDLE state)
+2. Send start bit (logic 0) for one baud period
+3. Send 8 data bits, LSB first, each for one baud period
+4. Send stop bit (logic 1) for one baud period
+5. Return to IDLE, set `tx_busy = 0`
+
+**Frame Format Example:**
+
+```
+Transmitting 'T' (ASCII 0x54 = 0101 0100)
+
+tx: ──┐     ┌───┐   ┐   ┌───┐   ┌───────┐
+      │     │   │   │   │   │   │       │
+      └─────┘   └───┘   └───┘   └───────┘
+      IDLE START 0 0 1 0 1 0 1 0  STOP IDLE
+             │←──── 8 bits ────→│
+           (LSB)            (MSB)
+```
+
+**Critical Timing:**
+
+- Each bit period = `BAUD_DIV` clock cycles
+- `baud_tick` pulses once per bit period
+- State transitions occur only on `baud_tick`
+
+---
+
+### 3. ASCII Encoder Module (`ascii_encoder.v`)
+
+**Purpose:** Converts a binary temperature value (0-99) into two ASCII digit characters.
+
+**Algorithm:**
+
+```verilog
+Input: value = 25 (decimal)
+
+tens = 25 / 10 = 2
+ones = 25 % 10 = 5
+
+tens_ascii = '0' + tens = 48 + 2 = 50 = '2'
+ones_ascii = '0' + ones = 48 + 5 = 53 = '5'
+
+Output: tens_ascii = 0x32 ('2'), ones_ascii = 0x35 ('5')
+```
+
+**ASCII Table Reference:**
+
+- '0' = 48 (0x30)
+- '1' = 49 (0x31)
+- ...
+- '9' = 57 (0x39)
+
+**Combinational Logic:**
+
+- Pure combinational module (no clock, no state)
+- Division and modulo operations synthesized as logic gates
+- Output updates instantly when input changes
+
+---
+
+### 4. Build String Module (`buildstring.v`)
+
+**Purpose:** Creates a complete ASCII message string with temperature value embedded.
+
+**Character Sequence:**
+
+```
+Index:  0    1    2    3    4    5    6    7    8    9     10
+Char:  'T'  'e'  'm'  'p'  ' '  '='  ' '  '2'  '5'  '\r'  '\n'
+Hex:   54   65   6D   70   20   3D   20   32   35   0D    0A
+```
+
+**Module Operation:**
+
+1. Takes an index input (0-10)
+2. Uses case statement to select corresponding character
+3. Positions 7 and 8 are dynamically filled with temperature digits
+4. Returns the selected character as 8-bit output
+
+**Usage Example:**
+
+```verilog
+// To send full string via UART:
+for (i = 0; i < 11; i++) {
+    buildstring bs (.value(25), .index(i), .char_out(current_char));
+    uart_tx     tx (.tx_data(current_char), .tx_start(1), ...);
+    wait_for_uart_done();
+}
+```
+
+---
+
+### 5. Testbenches
+
+#### I²C Testbench (`tb_i2c_slave_dummy.v`)
+
+**Key Features:**
+
+- Generates SCL clock signal
+- Models open-drain SDA bus with tri-state logic
+- Implements I²C master tasks: `i2c_start()`, `i2c_stop()`, `i2c_write_byte()`, `i2c_read_byte()`
+- Simulates complete read transaction
+- Generates VCD waveform file for analysis
+
+**Test Sequence:**
+
+1. Reset slave
+2. Generate START condition
+3. Send slave address (0x48) + READ bit
+4. Check for ACK from slave
+5. Read data byte (expect 0x19)
+6. Send NACK (master not requesting more data)
+7. Generate STOP condition
+8. Verify received data matches expected value
+
+#### UART Testbench (`tb_uart_tx.v`)
+
+**Key Features:**
+
+- Generates system clock
+- Sends test bytes to UART module
+- Monitors `tx` output and `tx_busy` flag
+- Validates timing and bit patterns
+- Generates VCD for waveform inspection
+
+**Test Sequence:**
+
+1. Reset UART module
+2. Load test data byte (e.g., 0x41 = 'A')
+3. Assert `tx_start` signal
+4. Wait for transmission to complete (`tx_busy` goes low)
+5. Verify start bit, 8 data bits (LSB first), and stop bit
+6. Repeat with different test values
+
+---
+
+## �🚀 Quick Start — Simulation with Icarus Verilog
+
+### 1. Install Tools (macOS)
 
 ```bash
 brew install icarus-verilog gtkwave
 ```
 
-2. Example: run the UART transmitter testbench:
+### 2. Run I²C Slave Testbench
 
 ```bash
-iverilog -o uart_tb.vvp uart_tx.v uart_tx_tb.v
+iverilog -o i2c_tb.vvp i2c_slave_dummy.v tb_i2c_slave_dummy.v
+vvp i2c_tb.vvp
+gtkwave i2c_slave_dummy.vcd
+```
+
+**Expected Waveform:** START condition → Address (0x48) + R/W bit → ACK → Data byte (0x19) → STOP condition
+
+### 3. Run UART Transmitter Testbench
+
+```bash
+iverilog -o uart_tb.vvp uart_tx.v tb_uart_tx.v
 vvp uart_tb.vvp
+gtkwave uart_tx.vcd
 ```
 
-3. Example: run the full end-to-end testbench (I2C dummy + ASCII builder + UART):
+**Expected Waveform:** UART frame with start bit (0), 8 data bits (LSB first), stop bit (1) at configured baud rate
 
-```bash
-iverilog -o full_tb.vvp ascii_encoder.v ascii_uart_sender.v buildstring.v i2c_slave_dummy.v tb_ascii_uart_sender.v uart_tx.v
-vvp full_tb.vvp
-```
+---
 
-4. View generated waveform VCD files with GTKWave:
+## 🔧 Vivado Setup and Simulation
 
-```bash
-gtkwave <file>.vcd
-```
+### For Simulation (No Hardware Required)
 
-Notes for simulation
+1. **Launch Vivado** and create a new RTL project
+2. **Add Design Sources:**
+   - `i2c_slave_dummy.v`
+   - `uart_tx.v`
+   - `ascii_encoder.v`
+   - `buildstring.v`
+3. **Add Simulation Sources:**
+   - `tb_i2c_slave_dummy.v`
+   - `tb_uart_tx.v`
+4. **Run Behavioral Simulation:**
+   - Flow Navigator → Simulation → Run Behavioral Simulation
+5. **Inspect Waveforms:**
+   - Add signals: `SCL`, `SDA`, `tx`, `clk`, `reset`
+   - Zoom to regions showing I²C transactions or UART frames
 
-- Ensure the testbench writes a VCD (or `sim.out`) file — check the testbench for the VCD filename.
-- If needed, edit the testbench to increase simulation time or add specific stimulus.
+### For Hardware Implementation (FPGA Board)
 
-Vivado — behavioral simulation and hardware flow
+1. Create a top-level module that instantiates:
+   - I²C master logic (to be implemented)
+   - `i2c_slave_dummy.v` (for simulation) or connect to real I²C sensor
+   - `ascii_encoder.v`, `buildstring.v`
+   - `uart_tx.v`
+2. **Add Constraints File (XDC):**
+   - Map `SCL`, `SDA` pins to I²C bus
+   - Map `tx` pin to UART TX
+   - Set clock constraints
+3. **Run Implementation Flow:**
+   - Synthesis → Implementation → Generate Bitstream
+4. **Program Device:** Hardware Manager → Program Device
 
-1. Create a new RTL project in Vivado and add the Verilog sources from this repo.
-2. For simulation only, set the top-level testbench as the simulation source and run: Flow Navigator -> Simulation -> Run Behavioral Simulation.
-3. To inspect waveforms, use the Vivado waveform viewer; expand signals such as `SCL`, `SDA`, `tx`, `clk`, and `reset`.
-4. To target a physical board: add an XDC constraints file mapping `SCL`, `SDA`, and `tx` to board pins, then run Synthesis -> Implementation -> Generate Bitstream -> Program Device.
+**Note:** You do **not** need to create separate files for Vivado — just add the existing `.v` files to your Vivado project as shown above.
 
-Recording Vivado waveforms / media guidance
+---
 
-Recommended: QuickTime Player (macOS) or OBS Studio. Capture the Vivado window and waveform pane while running Behavioral Simulation.
+## 📹 Recording Vivado Simulation (Optional)
 
-Steps (brief):
+**Tools:** QuickTime Player (macOS) or OBS Studio
 
-1. Open or create the Vivado project and add repo sources.
-2. Run Behavioral Simulation and prepare the waveform zoom region you want to capture.
-3. Start screen recording and then run the simulation to generate the waveform.
-4. Stop recording and save the MP4 under `docs/media/` named `<yourname>_vivado_run.mp4`.
-5. Also include 1–3 PNG screenshots with zoomed-in waveforms under `docs/media/`.
+**Steps:**
 
-Recording settings (suggested): 1920x1080, 30 fps, MP4 (H.264), no audio.
+1. Open Vivado project and run Behavioral Simulation
+2. Set up waveform view with key signals (SCL, SDA, tx, clk)
+3. Start screen recording
+4. Run simulation and zoom to interesting waveform regions
+5. Stop recording and save as MP4
 
-File and test expectations
+**Settings:** 1920×1080, 30fps, H.264, no audio
 
-- I2C: the waveform should show a START condition, address + R/W, ACK, data byte `0x19`, and STOP.
-- UART: transmitted framed bytes should correspond to ASCII for the string "Temp = 25" (LSB-first bit order, 1 start bit, 8 data bits, 1 stop bit typical).
+**Location:** Save recordings/screenshots in `screenshots/` folder with descriptive names
 
-Project overview and architecture
+---
 
-Functional flow:
+## 🧪 Testing and Validation
 
-1. FPGA I2C master issues a read to the dummy sensor address.
-2. `i2c_slave_dummy.v` ACKs and returns a fixed temperature byte (25 decimal).
-3. ASCII builder modules convert the numeric temperature into the printable string.
-4. UART transmitter serializes the ASCII bytes and sends them out on the `tx` pin.
+### I²C Slave Testing
 
-Testing strategy
+- Verify START condition detection (SDA falling while SCL high)
+- Confirm address matching (0x48 + R/W bit)
+- Check ACK generation by slave
+- Validate data byte output (0x19)
+- Verify STOP condition detection (SDA rising while SCL high)
 
-- Unit tests: `uart_tx_tb.v` and `tb_i2c_slave_dummy.v`.
-- End-to-end: `tb_ascii_uart_sender.v` validates I2C read → ASCII conversion → UART transmit.
-- Use GTKWave or Vivado waveform viewer to validate signals and timings.
+### UART Testing
 
-Contributors and individual work (as requested)
+- Verify baud rate timing (clock division)
+- Check frame format: 1 start bit + 8 data bits + 1 stop bit
+- Confirm LSB-first bit ordering
+- Validate idle state (tx = 1)
 
-- Ronil Borah — I²C implementation and Vivado project/simulation flow
+---
 
-  - Implemented and tested the I²C master behavior and validated START/STOP, ACK sampling, and SDA tri-state handling in simulation. Created Vivado project, ran behavioral simulations, captured waveforms, and prepared Vivado-related instructions.
+## 📚 Learning Resources
 
-- Shreya Meher — UART implementation
-  - Implemented and/or verified the UART transmitter core, baud/tick generator, FSM, shift register, and testbench validation. Confirmed framing and LSB-first transmission.
+### Vivado Installation and Setup
 
-Assistant notes (what I added)
+- [Vivado Installation Guide Part 1](https://youtu.be/W8k0cfSOFbs?si=e_4kKj7fOBpXytX6)
+- [Vivado Installation Guide Part 2](https://youtu.be/-U1OzeV9EKg?si=YT9s69aZx1oj1uqo)
+- [First FPGA Project in Vivado](https://youtu.be/bw7umthnRYw)
+- [Vivado Basic Implementation Playlist](https://www.youtube.com/playlist?list=PLmLQnr2Fjat0WpVSmZ76kkMtSWie2DBpQ)
 
-- Initial documentation and run instructions were written and added to this repo under `docs/`.
-- `docs/teammate_contribution_template.txt` is provided so each teammate can add a detailed contribution file.
+### Protocol Learning
 
-How to document your contribution (fill and commit)
+- **I²C:**
+  - [I²C Basics](https://www.youtube.com/watch?v=OHzX6BCqVr8)
+  - [I²C Intermediate](https://youtu.be/_bReVnQsiwg?si=isv9t6BjJJO4ykR2)
+  - [I²C Implementation Playlist](https://youtube.com/playlist?list=PLIA9XWvqXXMzzO0g6bZTEtjTBv6sbKYpN&si=A2Mh8u2Ojac_JWYw)
+- **UART:**
 
-1. Copy the template in `docs/teammate_contribution_template.txt` to `docs/<yourname>_contribution.txt`.
-2. Fill sections with technical details: files changed, tests run (exact commands), waveform references and screenshots, and time log.
-3. Place media in `docs/media/` and reference the files in your contribution text.
+  - [UART Basics](https://youtu.be/NAYc1SoXGbQ?si=thPU9YME6vx897vg)
+  - [UART Implementation Playlist](https://youtube.com/playlist?list=PLqPfWwayuBvPNEejEgA82Xq_n4gk8f0Kk&si=I4ECgYkW_tOOslzc)
+  - [UART TX/RX Design](https://youtu.be/L62Ev3KOpFo?si=QSoAhtZv_DDi0Vew)
 
-Resources and recommended learning materials
+- **General Verilog:**
+  - [Recommended Verilog Playlist](https://youtube.com/playlist?list=PLJ5C_6qdAvBELELTSPgzYkQg3HgclQh-5&si=BsM3Qucm3cVjgQK2)
 
-- Vivado installation and first projects:
+---
 
-  - https://youtu.be/W8k0cfSOFbs?si=e_4kKj7fOBpXytX6
-  - https://youtu.be/-U1OzeV9EKg?si=YT9s69aZx1oj1uqo
-  - https://youtu.be/bw7umthnRYw
-  - https://www.youtube.com/playlist?list=PLmLQnr2Fjat0WpVSmZ76kkMtSWie2DBpQ
+## 👥 Contributors
 
-- Protocol learning resources (I²C / UART / SPI):
-  - UART basics: https://youtu.be/NAYc1SoXGbQ?si=thPU9YME6vx897vg
-  - I²C basics: https://www.youtube.com/watch?v=OHzX6BCqVr8
-  - SPI basics: https://youtu.be/AV0w0Ko7D6E?si=LeWXZZPq2TrwtU3f
-  - Recommended playlist for overall Verilog learning: https://youtube.com/playlist?list=PLJ5C_6qdAvBELELTSPgzYkQg3HgclQh-5&si=BsM3Qucm3cVjgQK2
+### Ronil Borah — I²C Implementation
 
-Suggested next improvements
+**Contributions:**
 
-- Add a `Makefile` with `make sim`, `make full`, and `make wave` targets to standardize simulations.
-- Add a CI job that runs `iverilog` tests and archives VCD outputs for PR validation.
-- Expand I2C dummy to allow configurable returned temperature and multi-register reads.
+- Implemented `i2c_slave_dummy.v` module with FSM-based I²C protocol handling
+- Designed proper START/STOP condition detection (asynchronous, SCL-independent)
+- Implemented SDA tri-state control and open-drain signaling
+- Created `tb_i2c_slave_dummy.v` testbench with I²C transaction tasks
+- Validated I²C timing and ACK/NACK behavior in simulation
+- Set up Vivado project and ran behavioral simulations
+- Captured and analyzed I²C waveforms in Vivado
 
-Contact / workflow
+**Key Technical Details:**
 
-- After you fill your individual contribution file and add media, ping the maintainer to merge and finalize the project report.
+- Used separate FSM states for IDLE, ADDR, ACK_ADDR, SEND_DATA, WAIT_ACK
+- Implemented shift register for serial-to-parallel conversion
+- Proper handling of SDA sampling on SCL rising edge
+- ACK generation by pulling SDA low
+
+### Shreya Meher — UART Implementation
+
+_Shreya will add her contribution details here_
+
+---
+
+## 🔮 Future Improvements
+
+- Add I²C master module to complete full system integration
+- Implement multi-byte I²C read/write transactions
+- Add configurable temperature values (not fixed at 25)
+- Create Makefile with simulation targets (`make sim`, `make wave`)
+- Add constraints file templates for common FPGA boards (Zynq, Artix-7)
+- Implement UART receiver for bidirectional communication
+
+---
+
+## 📝 Project Context
+
+This project is part of a digital systems design course focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
+
+- Asynchronous serial communication (UART)
+- Synchronous serial communication with multi-master capability (I²C)
+- FSM-based protocol implementation
+- Testbench development and waveform analysis
+- Vivado simulation and synthesis workflow
+
+---
+
+**License:** MIT (or specify your license)  
+**Course:** Digital Systems Design  
+**Institution:** (Add your institution name)
