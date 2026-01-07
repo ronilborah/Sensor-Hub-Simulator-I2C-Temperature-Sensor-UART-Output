@@ -496,13 +496,14 @@ assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
 #### Changes from Initial Objectives
 
 **Achieved:**
-✅ Complete I²C slave implementation with FSM
-✅ Proper START/STOP detection
-✅ Open-drain signaling with tri-state control
-✅ Address matching and ACK generation
-✅ Data byte transmission
-✅ Comprehensive testbench with waveform validation
-✅ Vivado project setup and behavioral simulation
+
+1. Complete I²C slave implementation with FSM
+2. Proper START/STOP detection
+3. Open-drain signaling with tri-state control
+4. Address matching and ACK generation
+5. Data byte transmission
+6. Comprehensive testbench with waveform validation
+7. Vivado project setup and behavioral simulation
 
 **Limitations/Not Implemented:**
 
