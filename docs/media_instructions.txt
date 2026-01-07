@@ -1,0 +1,28 @@
+Media & Vivado Recording Instructions
+
+Objective: record a short video showing Vivado simulation or implementation flow, capture waveform showing I2C and UART activity, and save the recording to the repo under `docs/media/`.
+
+Recommended tools (macOS):
+- Built-in Screen Recording: QuickTime Player -> File -> New Screen Recording
+- Alternatively: OBS Studio (free) for higher control and MP4 recording.
+
+Recording steps (Vivado behavioral simulation):
+1) Open Vivado and load the project (or create a new project and add sources from the repo).
+2) Run Behavioral Simulation: Flow Navigator -> Simulation -> Run Behavioral Simulation.
+3) In the Waveform viewer, expand signals: `SCL`, `SDA`, `tx`, `clk`, `reset`.
+4) Optionally add cursors and zoom to the regions showing START/address/data/STOP or UART frame for a selected byte.
+5) Start screen recording (QuickTime or OBS) and capture the Vivado window and waveform pane.
+6) Perform simulation run (hit the run button) to generate the waveform while recording.
+7) Stop recording when you have captured the required waveforms.
+
+File naming and placement:
+- Name the video `<yourname>_vivado_run.mp4` and place it in `docs/media/`.
+- Also include 1-3 PNG screenshots showing zoomed-in waveforms named `<yourname>_wave_1.png`, etc.
+
+Recording settings suggestions:
+- Resolution: 1920x1080 (or your screen native if higher)
+- Frame rate: 30 fps
+- Output format: MP4 (H.264)
+- Audio: off / mute (narration not required)
+
+If you cannot record, instead place waveform images and a short text description in `docs/media/README.txt` describing the steps taken to reproduce the waveform.
