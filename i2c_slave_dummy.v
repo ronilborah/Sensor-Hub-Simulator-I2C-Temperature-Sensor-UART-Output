@@ -5,15 +5,11 @@ module i2c_slave_dummy (
     input  wire rst_n      // active-low reset
 );
 
-    // -------------------------------------------------
     // Parameters
-    // -------------------------------------------------
     localparam [6:0] SLAVE_ADDR = 7'h48; // Dummy address
     localparam [7:0] TEMP_DATA  = 8'd25; // 25°C
 
-    // -------------------------------------------------
     // FSM states
-    // -------------------------------------------------
     typedef enum logic [2:0] {
         IDLE      = 3'd0,
         ADDR      = 3'd1,
@@ -24,16 +20,12 @@ module i2c_slave_dummy (
 
     state_t state, next_state;
 
-    // -------------------------------------------------
     // Internal registers
-    // -------------------------------------------------
     logic [7:0] shift_reg;
     logic [2:0] bit_cnt;
     logic sda_prev;
 
-    // -------------------------------------------------
     // START / STOP detection (ASYNCHRONOUS – IMPORTANT)
-    // -------------------------------------------------
     wire start_cond;
     wire stop_cond;
 
@@ -48,9 +40,7 @@ module i2c_slave_dummy (
             sda_prev <= sda_in;
     end
 
-    // -------------------------------------------------
     // FSM state register (clocked by SCL)
-    // -------------------------------------------------
     always @(posedge scl or negedge rst_n) begin
         if (!rst_n)
             state <= IDLE;
@@ -58,9 +48,7 @@ module i2c_slave_dummy (
             state <= next_state;
     end
 
-    // -------------------------------------------------
     // FSM next-state logic
-    // -------------------------------------------------
     always @(*) begin
         next_state = state;
         case (state)
@@ -73,9 +61,7 @@ module i2c_slave_dummy (
         endcase
     end
 
-    // -------------------------------------------------
     // Bit counter and shift register
-    // -------------------------------------------------
     always @(posedge scl or negedge rst_n) begin
         if (!rst_n) begin
             bit_cnt   <= 3'd0;
@@ -99,9 +85,7 @@ module i2c_slave_dummy (
         end
     end
 
-    // -------------------------------------------------
     // Open-drain SDA control
-    // -------------------------------------------------
     assign sda_oe =
         (state == ACK_ADDR) ? 1'b1 :
         (state == SEND_DATA && shift_reg[7] == 1'b0) ? 1'b1 :
