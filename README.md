@@ -347,8 +347,6 @@ gtkwave uart_tx.vcd
    - Synthesis → Implementation → Generate Bitstream
 4. **Program Device:** Hardware Manager → Program Device
 
-**Note:** You do **not** need to create separate files for Vivado — just add the existing `.v` files to your Vivado project as shown above.
-
 ---
 
 ## Recording Vivado Simulation (Optional)
@@ -541,6 +539,8 @@ When encountering issues, I relied on chatbots to:
 2. Suggest fixes for timing violations
 3. Provide examples of proper I²C tri-state modeling
 4. Debug testbench issues
+
+---
 
 ### Shreya Meher — UART Implementation
 
