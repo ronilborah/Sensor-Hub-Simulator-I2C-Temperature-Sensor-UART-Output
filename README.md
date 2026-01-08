@@ -494,17 +494,16 @@ assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
 - 10-bit addressing mode
 - I²C master module (only slave implemented)
 
-These features were beyond the scope of the initial mini-project requirements and can be added as future enhancements.
-
 #### Resources Used
 
 **Primary Resources:**
 
-- **Chatbots (ChatGPT/GitHub Copilot)**: Used extensively when debugging issues, especially for:
+- **Chatbots (ChatGPT/GitHub Copilot)**: Used when debugging issues, especially for:
   - Understanding START/STOP condition detection logic
   - Resolving tri-state/open-drain modeling in Verilog
   - Debugging FSM state transitions
   - Fixing testbench timing issues
+  - For writing this
 
 **YouTube Videos:**
 
