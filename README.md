@@ -349,24 +349,6 @@ gtkwave uart_tx.vcd
 
 ---
 
-## Recording Vivado Simulation (Optional)
-
-**Tools:** QuickTime Player (macOS) or OBS Studio
-
-**Steps:**
-
-1. Open Vivado project and run Behavioral Simulation
-2. Set up waveform view with key signals (SCL, SDA, tx, clk)
-3. Start screen recording
-4. Run simulation and zoom to interesting waveform regions
-5. Stop recording and save as MP4
-
-**Settings:** 1920×1080, 30fps, H.264, no audio
-
-**Location:** Save recordings/screenshots in `screenshots/` folder with descriptive names
-
----
-
 ## Testing and Validation
 
 ### I²C Slave Testing
