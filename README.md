@@ -644,17 +644,6 @@ BAUD_DIV = CLK_FREQ / BAUD_RATE; // e.g., 1_000_000 / 9600 ≈ 104
 
 ---
 
-## Future Improvements
-
-- Add I²C master module to complete full system integration
-- Implement multi-byte I²C read/write transactions
-- Add configurable temperature values (not fixed at 25)
-- Create Makefile with simulation targets (`make sim`, `make wave`)
-- Add constraints file templates for common FPGA boards (Zynq, Artix-7)
-- Implement UART receiver for bidirectional communication
-
----
-
 ## Project Context
 
 This project is part of a digital systems design course focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
