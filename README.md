@@ -628,7 +628,7 @@ BAUD_DIV = CLK_FREQ / BAUD_RATE; // e.g., 1_000_000 / 9600 ≈ 104
 
 ## Project Context
 
-This project is part of a digital systems design course focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
+This project is part of a digital design course under the Phoenix Association focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
 
 - Asynchronous serial communication (UART)
 - Synchronous serial communication with multi-master capability (I²C)
