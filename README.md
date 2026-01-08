@@ -123,6 +123,12 @@ START    └─┴─┴─┴─┴─┴─┴─┴─┴─┘       └─�
          Address (0x48) + R
 ```
 
+**I²C Slave Waveform (GTKWave):**
+
+![I²C Slave Waveform](screenshots/i2c_slave_waveform.jpeg)
+
+_Waveform showing complete I²C transaction: START condition, address byte (0x48), ACK, data byte (0x19), and STOP condition_
+
 ---
 
 ### 2. UART Transmitter Module (`uart_tx.v`)
@@ -205,6 +211,12 @@ Output: tens_ascii = 0x32 ('2'), ones_ascii = 0x35 ('5')
 - Pure combinational module (no clock, no state)
 - Division and modulo operations synthesized as logic gates
 - Output updates instantly when input changes
+
+**ASCII Encoder Output:**
+
+![ASCII Encoder](screenshots/ascii%20ss.png)
+
+_ASCII encoder converting binary temperature value to ASCII characters for display_
 
 ---
 
@@ -301,6 +313,12 @@ gtkwave i2c_slave_dummy.vcd
 ```
 
 **Expected Waveform:** START condition → Address (0x48) + R/W bit → ACK → Data byte (0x19) → STOP condition
+
+**Simulation View:**
+
+![Vivado Simulation](screenshots/Screenshot%202026-01-02%20at%2019.29.05.png)
+
+_Vivado behavioral simulation showing waveforms and signal values_
 
 ### 3. Run UART Transmitter Testbench
 
@@ -517,28 +535,112 @@ assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
 - Vivado for behavioral simulation and waveform capture
 
 **Approach:**
-When encountering issues, I primarily relied on chatbots to:
+When encountering issues, I relied on chatbots to:
 
 1. Explain error messages and synthesis warnings
 2. Suggest fixes for timing violations
 3. Provide examples of proper I²C tri-state modeling
 4. Debug testbench issues
 
-YouTube videos helped build foundational understanding before implementation.
-
-#### Time Spent
-
-Approximately 12-15 hours over 3 days:
-
-- Day 1: Protocol study and initial FSM design (4 hours)
-- Day 2: Implementation, debugging START/STOP detection (5 hours)
-- Day 3: Testbench creation, Vivado setup, waveform validation (4 hours)
-
----
-
 ### Shreya Meher — UART Implementation
 
-_Shreya will add her contribution details here_
+#### Problem Statement and Objectives
+
+The objective was to implement a reliable UART transmitter capable of serializing 8-bit data at a configurable baud rate and sending it using the standard frame format: 1 start bit (0), 8 data bits (LSB first), and 1 stop bit (1). The design needed to expose a simple handshake (`tx_start`, `tx_busy`), hold the line idle-high when not transmitting, and integrate cleanly with upstream ASCII and string-building modules.
+
+#### How I Tackled the Problem
+
+**1. Understanding UART Protocol Fundamentals**
+
+- Reviewed UART frame structure and idle-line behavior (idle = HIGH)
+- Clarified that transmission starts with a start bit (0), followed by 8 LSB-first data bits, and ends with a stop bit (1)
+- Determined baud-rate timing from system clock using a divider
+
+**2. FSM Design Approach**
+
+- Broke the transmitter into four states:
+  - **IDLE**: Line held HIGH, wait for `tx_start`
+  - **START**: Drive start bit (0) for one baud period
+  - **DATA**: Shift out 8 bits, LSB first, one per baud tick
+  - **STOP**: Drive stop bit (1) for one baud period, then return to **IDLE**
+
+**3. Critical Implementation Challenges and Solutions**
+
+**Challenge 1: Accurate Baud-Tick Generation**
+
+- **Problem**: Early versions produced jitter due to off-by-one errors in the divider
+- **Solution**: Implemented a deterministic clock divider with a single-cycle `baud_tick` pulse; verified `BAUD_DIV = CLK_FREQ / BAUD_RATE` across test cases
+
+**Challenge 2: Correct Bit Ordering**
+
+- **Problem**: Initial shift logic sent MSB first, which is incorrect for UART
+- **Solution**: Switched to LSB-first serialization using a right-shift register, sampling the LSB each baud tick
+
+**Challenge 3: Back-to-Back Transmissions**
+
+- **Problem**: Consecutive `tx_start` requests during `STOP` caused dropped frames
+- **Solution**: Gated `tx_start` acceptance only in **IDLE** and exposed `tx_busy` so upstream logic waits until transmission completes
+
+#### Proposed Solution and Implementation
+
+**Files Implemented:**
+
+- `uart_tx.v` — Parameterizable UART transmitter with FSM and baud generator
+- `tb_uart_tx.v` — Testbench driving multiple data bytes and asserting timing correctness
+
+**Key Features:**
+
+- Clean FSM: **IDLE → START → DATA → STOP**
+- Parameterized `CLK_FREQ` and `BAUD_RATE`; computed `BAUD_DIV`
+- Single-cycle `baud_tick` drives state transitions and bit timing
+- LSB-first shifting via a data register and bit counter
+- `tx_busy` handshake to prevent overlapping transmissions
+- Synchronous reset to a known idle state (line HIGH)
+
+**Representative Snippets:**
+
+```verilog
+// FSM states
+IDLE  // wait for tx_start, tx = 1
+START // tx = 0 for one baud period
+DATA  // shift out 8 bits, LSB first
+STOP  // tx = 1 for one baud period
+
+// Baud divider
+BAUD_DIV = CLK_FREQ / BAUD_RATE; // e.g., 1_000_000 / 9600 ≈ 104
+```
+
+#### Validation and Testing
+
+- Built a self-checking testbench that:
+  - Pulses `tx_start` with various bytes (`'A'`, `'T'`, numeric digits)
+  - Monitors `tx`, `tx_busy`, and bit timing aligned to `baud_tick`
+  - Confirms start bit = 0, data bits LSB-first, stop bit = 1
+- Generated VCDs and inspected waveforms in GTKWave to verify frame boundaries and inter-frame idle periods
+
+#### Changes from Initial Objectives
+
+**Achieved:**
+
+1. Robust UART TX with parameterized baud rate
+2. Deterministic baud tick generation and clean FSM transitions
+3. LSB-first bit serialization with accurate timing
+4. Handshake (`tx_busy`) to coordinate with upstream modules
+5. Comprehensive testbench and waveform validation
+
+**Limitations/Not Implemented:**
+
+- No parity bit or configurable stop-bit length (fixed 1 stop bit)
+- No hardware flow control (CTS/RTS)
+- No transmit FIFO; relies on upstream rate control via `tx_busy`
+
+#### Resources Used
+
+**Primary References:**
+
+- UART protocol tutorials and timing diagrams (see Learning Resources above)
+- Waveform inspection with GTKWave for timing validation
+- Chatbots (ChatGPT/GitHub Copilot) for debugging divider math and FSM edge cases
 
 ---
 
@@ -562,5 +664,3 @@ This project is part of a digital systems design course focusing on serial commu
 - FSM-based protocol implementation
 - Testbench development and waveform analysis
 - Vivado simulation and synthesis workflow
-
----
