@@ -314,25 +314,6 @@ gtkwave uart_tx.vcd
 
 ---
 
-## Vivado Setup and Simulation
-
-### For Simulation (No Hardware Required)
-
-1. **Launch Vivado** and create a new RTL project
-2. **Add Design Sources:**
-   - `i2c_slave_dummy.v`
-   - `uart_tx.v`
-   - `ascii_encoder.v`
-   - `buildstring.v`
-3. **Add Simulation Sources:**
-   - `tb_i2c_slave_dummy.v`
-   - `tb_uart_tx.v`
-4. **Run Behavioral Simulation:**
-   - Flow Navigator → Simulation → Run Behavioral Simulation
-5. **Inspect Waveforms:**
-   - Add signals: `SCL`, `SDA`, `tx`, `clk`, `reset`
-   - Zoom to regions showing I²C transactions or UART frames
-
 ### For Hardware Implementation (FPGA Board)
 
 1. Create a top-level module that instantiates:
