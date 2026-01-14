@@ -639,6 +639,8 @@ This section provides a complete guide to implementing this project on the **Zyn
 - **Clock Source:** 100 MHz onboard oscillator
 - **Output Interface:** USB-UART bridge and GPIO headers
 
+⚠️ **Note:** Ensure the ZedBoard clock configuration jumpers are in the default position to route the 100 MHz oscillator to the PL. Check jumpers JP7-JP11 if the clock is not functioning.
+
 ### Required External Components
 
 ⚠️ **MANDATORY for I²C operation:**
@@ -770,15 +772,18 @@ set_property CONFIG_VOLTAGE 3.3 [current_design]
 2. Select **Add or create design sources**
 3. Click **Add Files**
 4. Navigate to your project directory
-5. Select **`sensor_hub_complete.v`**
+5. Select **`sensor_hub_complete.v`** (this file contains all modules including the top module)
 6. ☑️ **Copy sources into project**
 7. Click **Finish**
 
+⚠️ **Important:** The file is named `sensor_hub_complete.v`, but the top-level module inside is named `sensor_hub_top`. This is normal and expected.
+
 #### 4. Set Top Module
 
-1. In **Sources** window, right-click on `sensor_hub_top`
+1. In **Sources** window, right-click on **`sensor_hub_top`** (the module, not the file)
 2. Select **Set as Top**
 3. Verify the hierarchy shows `sensor_hub_top` as the root
+4. All sub-modules (i2c_master, i2c_slave_dummy, uart_tx, etc.) should appear under it
 
 #### 5. Add Constraints
 
@@ -886,6 +891,8 @@ Temp = 25
 ```
 
 Each press of the TRIGGER button will produce one line of output.
+
+⚠️ **Note:** Push buttons are not debounced in hardware. For clean operation, press and release the trigger button deliberately. Rapid or noisy button presses may cause multiple triggers.
 
 ---
 
