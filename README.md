@@ -626,6 +626,535 @@ BAUD_DIV = CLK_FREQ / BAUD_RATE; // e.g., 1_000_000 / 9600 ≈ 104
 
 ---
 
+---
+
+## Hardware Implementation on ZedBoard
+
+This section provides a complete guide to implementing this project on the **Zynq ZedBoard (xc7z020)** using the Programmable Logic (PL) fabric only, without the ARM Processing System (PS).
+
+### Target Hardware
+
+- **Board:** Zynq ZedBoard (xc7z020clg484-1)
+- **Implementation:** Pure FPGA (PL-only, no PS)
+- **Clock Source:** 100 MHz onboard oscillator
+- **Output Interface:** USB-UART bridge and GPIO headers
+
+### Required External Components
+
+⚠️ **MANDATORY for I²C operation:**
+
+- **2 × 4.7 kΩ resistors** (pull-up resistors)
+  - One for SDA line → 3.3V
+  - One for SCL line → 3.3V
+
+Without these pull-ups, the I²C bus will not function correctly due to the open-drain nature of I²C.
+
+---
+
+### Physical Pin Mapping
+
+#### System Signals
+
+| Signal    | Direction | ZedBoard Pin | Description                      | IOSTANDARD |
+| --------- | --------- | ------------ | -------------------------------- | ---------- |
+| `clk`     | Input     | Y9           | 100 MHz onboard clock            | LVCMOS33   |
+| `rst`     | Input     | P16          | Push button (center button)      | LVCMOS33   |
+| `trigger` | Input     | N15          | Push button (right button)       | LVCMOS33   |
+| `uart_tx` | Output    | D4           | UART transmit to USB-UART bridge | LVCMOS33   |
+
+#### I²C Bus (PMOD Connector JA)
+
+| Signal | Direction | ZedBoard Pin | PMOD Pin | External Connection   |
+| ------ | --------- | ------------ | -------- | --------------------- |
+| `scl`  | Output    | E15          | JA2      | 4.7kΩ pull-up to 3.3V |
+| `sda`  | Inout     | E16          | JA1      | 4.7kΩ pull-up to 3.3V |
+
+**Note:** The PMOD pins can be changed based on availability. Ensure the XDC constraints match your physical connections.
+
+---
+
+### Physical Wiring Diagram
+
+```
+ZedBoard PMOD Header (JA)
+┌─────────────────────────┐
+│ JA1 (SDA) ──┬───────────┤ I²C Data (bidirectional)
+│             │           │
+│             └──[4.7kΩ]──┤── 3.3V (VCC)
+│                         │
+│ JA2 (SCL) ──┬───────────┤ I²C Clock
+│             │           │
+│             └──[4.7kΩ]──┤── 3.3V (VCC)
+│                         │
+│ GND ────────────────────┤ Ground
+└─────────────────────────┘
+
+USB-UART (Onboard)
+├── TX ──→ PC (auto-connected via USB)
+└── RX (not used)
+```
+
+---
+
+### XDC Constraints File
+
+Create `zedboard_sensor_hub.xdc` with the following content:
+
+```xdc
+# ============================================================================
+# ZedBoard Sensor Hub Constraints
+# ============================================================================
+
+# System Clock (100 MHz)
+set_property PACKAGE_PIN Y9 [get_ports clk]
+set_property IOSTANDARD LVCMOS33 [get_ports clk]
+create_clock -period 10.0 -name sys_clk [get_ports clk]
+
+# Reset Button (Center button - BTNC)
+set_property PACKAGE_PIN P16 [get_ports rst]
+set_property IOSTANDARD LVCMOS33 [get_ports rst]
+
+# Trigger Button (Right button - BTNR)
+set_property PACKAGE_PIN N15 [get_ports trigger]
+set_property IOSTANDARD LVCMOS33 [get_ports trigger]
+
+# UART TX (USB-UART bridge)
+set_property PACKAGE_PIN D4 [get_ports uart_tx]
+set_property IOSTANDARD LVCMOS33 [get_ports uart_tx]
+
+# I²C SCL (PMOD JA2)
+set_property PACKAGE_PIN E15 [get_ports scl]
+set_property IOSTANDARD LVCMOS33 [get_ports scl]
+
+# I²C SDA (PMOD JA1)
+set_property PACKAGE_PIN E16 [get_ports sda]
+set_property IOSTANDARD LVCMOS33 [get_ports sda]
+
+# Timing Constraints
+set_input_delay -clock sys_clk -max 2.0 [get_ports rst]
+set_input_delay -clock sys_clk -max 2.0 [get_ports trigger]
+set_output_delay -clock sys_clk -max 2.0 [get_ports uart_tx]
+
+# Configuration
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+```
+
+⚠️ **Important:** Do NOT enable internal FPGA pull-ups/pull-downs for SDA/SCL. Use only external 4.7kΩ resistors.
+
+---
+
+### Vivado Project Setup (Step-by-Step)
+
+#### 1. Create New Project
+
+1. Open **Vivado Design Suite**
+2. Click **Create Project**
+3. Project name: `sensor_hub_zedboard`
+4. Project location: Choose your workspace
+5. Project type: **RTL Project**
+6. ☑️ **Do not specify sources at this time**
+7. Click **Next**
+
+#### 2. Select Target Board
+
+1. In the **Default Part** screen, select **Boards** tab
+2. Search for: `ZedBoard`
+3. Select: **ZedBoard Zynq Evaluation and Development Kit**
+4. Part: `xc7z020clg484-1`
+5. Click **Next** → **Finish**
+
+#### 3. Add Source Files
+
+1. Click **Add Sources** (or press Alt+A)
+2. Select **Add or create design sources**
+3. Click **Add Files**
+4. Navigate to your project directory
+5. Select **`sensor_hub_complete.v`**
+6. ☑️ **Copy sources into project**
+7. Click **Finish**
+
+#### 4. Set Top Module
+
+1. In **Sources** window, right-click on `sensor_hub_top`
+2. Select **Set as Top**
+3. Verify the hierarchy shows `sensor_hub_top` as the root
+
+#### 5. Add Constraints
+
+1. Click **Add Sources**
+2. Select **Add or create constraints**
+3. Click **Create File**
+4. File name: `zedboard_sensor_hub`
+5. File type: **XDC**
+6. Click **OK** → **Finish**
+7. Copy the XDC content from above into this file
+
+#### 6. Run Synthesis
+
+1. Click **Run Synthesis** in Flow Navigator
+2. Wait for completion (2-5 minutes)
+3. ✅ Check for errors in the Messages window
+4. Click **OK** when synthesis completes
+
+#### 7. Run Implementation
+
+1. Click **Run Implementation**
+2. Wait for completion (3-7 minutes)
+3. ✅ Verify no critical warnings
+4. Review timing report:
+   - All setup/hold times should be met
+   - No negative slack
+
+#### 8. Generate Bitstream
+
+1. Click **Generate Bitstream**
+2. Wait for bitstream generation (2-4 minutes)
+3. ✅ Check for "Bitstream generation successful" message
+
+#### 9. Program the FPGA
+
+1. Connect ZedBoard via **USB JTAG** cable
+2. Power on the board (SW8 switch)
+3. Click **Open Hardware Manager**
+4. Click **Auto Connect**
+5. Right-click on the detected device (`xc7z020_1`)
+6. Select **Program Device**
+7. Bitstream file should auto-populate
+8. Click **Program**
+9. ✅ Wait for "Programming successful" message
+
+---
+
+### Serial Terminal Setup
+
+To view the UART output, configure a serial terminal on your PC:
+
+#### Using PuTTY (Windows)
+
+1. Download and install [PuTTY](https://www.putty.org/)
+2. Connection type: **Serial**
+3. Serial line: `COM3` (check Device Manager for actual port)
+4. Speed: **9600**
+5. Click **Open**
+
+#### Using screen (macOS/Linux)
+
+```bash
+# Find the device
+ls /dev/tty.*                    # macOS
+ls /dev/ttyUSB*                  # Linux
+
+# Connect (replace with your device)
+screen /dev/tty.usbserial-* 9600  # macOS
+screen /dev/ttyUSB0 9600          # Linux
+
+# Disconnect: Ctrl+A, then K, then Y
+```
+
+#### Using minicom (Linux)
+
+```bash
+sudo minicom -D /dev/ttyUSB0 -b 9600
+```
+
+#### Serial Port Settings
+
+| Parameter    | Value |
+| ------------ | ----- |
+| Baud rate    | 9600  |
+| Data bits    | 8     |
+| Parity       | None  |
+| Stop bits    | 1     |
+| Flow control | None  |
+
+---
+
+### Running the Demo
+
+1. **Power on the ZedBoard**
+2. **Open serial terminal** at 9600 baud
+3. **Press the RESET button** (center button - BTNC)
+   - This initializes all FSM states
+4. **Press the TRIGGER button** (right button - BTNR)
+   - This starts the I²C read and UART transmission
+
+**Expected Output:**
+
+```
+Temp = 25
+```
+
+Each press of the TRIGGER button will produce one line of output.
+
+---
+
+### Debugging Checklist
+
+If the output doesn't appear or is incorrect, check the following:
+
+#### ❌ No output in terminal
+
+**Possible causes:**
+
+- ✅ Wrong COM port selected
+- ✅ Terminal not set to 9600 baud
+- ✅ UART TX pin constraint incorrect
+- ✅ Bitstream not programmed successfully
+- ✅ Reset button not pressed after programming
+
+**Solutions:**
+
+- Verify COM port in Device Manager (Windows) or `ls /dev/tty*` (macOS/Linux)
+- Double-check terminal settings (9600, 8N1)
+- Re-verify XDC constraints match physical connections
+- Re-program the device
+- Press reset button, then trigger button
+
+#### ❌ Garbage characters displayed
+
+**Possible causes:**
+
+- ✅ Clock frequency mismatch
+- ✅ Wrong baud rate parameter
+- ✅ Timing violations in design
+
+**Solutions:**
+
+- Verify clock constraint is 10.0ns (100 MHz)
+- Check `uart_tx` module parameters: `CLK_FREQ = 100_000_000, BAUD = 9600`
+- Review timing report for setup/hold violations
+- Ensure no critical warnings in implementation
+
+#### ❌ I²C transaction fails (no data)
+
+**Possible causes:**
+
+- ✅ Missing external pull-up resistors
+- ✅ SDA/SCL lines swapped
+- ✅ Wrong PMOD pins
+- ✅ Short circuit or open connection
+
+**Solutions:**
+
+- **MANDATORY:** Connect 4.7kΩ resistors from SDA → 3.3V and SCL → 3.3V
+- Verify physical wiring matches XDC constraints
+- Check continuity with multimeter
+- Measure voltage on SDA/SCL (should be ~3.3V when idle)
+
+#### ❌ Output prints only once
+
+**Expected behavior:**
+
+- Design requires one TRIGGER press per output line
+- This is intentional; not a bug
+
+**If it doesn't repeat:**
+
+- Button may need debouncing (add debounce circuit if needed)
+- Verify trigger button connection
+- Check FSM returns to IDLE state after transmission
+
+#### ❌ Synthesis/Implementation errors
+
+**Common issues:**
+
+- ✅ Missing module declarations
+- ✅ Port mismatch between modules
+- ✅ Latch inference warnings
+
+**Solutions:**
+
+- Ensure all modules are in the same file or properly referenced
+- Check all `always @(*)` blocks have complete case statements
+- Review Vivado messages for specific errors
+
+---
+
+### Design Notes for VIVA/Presentation
+
+**Key Points to Emphasize:**
+
+1. **I²C Protocol Implementation:**
+
+   - Open-drain signaling (never drive high, only pull low or release)
+   - START condition: SDA falls while SCL is high
+   - STOP condition: SDA rises while SCL is high
+   - ACK/NACK mechanism for handshaking
+
+2. **Dummy Slave Behavior:**
+
+   - Returns fixed temperature (25°C)
+   - Simplification: ignores master ACK after data transmission
+   - Real sensor would support multiple reads and temperature updates
+
+3. **UART Framing:**
+
+   - Asynchronous communication (no shared clock)
+   - Start bit (0), 8 data bits (LSB first), stop bit (1)
+   - Baud rate generator ensures accurate timing
+
+4. **FSM-Based Design:**
+
+   - Clear state transitions
+   - One-shot pulse generators for control signals
+   - Prevents multiple triggers per event
+
+5. **PL-Only Implementation:**
+   - No ARM processor involvement
+   - Demonstrates FPGA can replace microcontroller for simple sensor interfaces
+
+**Intentional Simplifications:**
+
+- No clock stretching (I²C advanced feature)
+- No multi-byte reads
+- No repeated START condition
+- Fixed temperature value (not reading from real sensor)
+- No UART receive path (TX only)
+
+---
+
+### Expected Questions & Answers
+
+**Q: Is this fully I²C compliant?**  
+**A:** Essential protocol phases are implemented correctly: START, address, ACK, data, STOP. Advanced features like clock stretching, 10-bit addressing, and multi-master arbitration are omitted for simplicity.
+
+**Q: Why are external pull-ups required?**  
+**A:** I²C is an open-drain bus. Devices can only pull the line LOW. Pull-up resistors are needed to return the line to HIGH when released. Without them, the line remains floating and communication fails.
+
+**Q: Why not use the ARM processor (PS) on Zynq?**  
+**A:** To demonstrate pure FPGA-based sensor interfacing. This shows that an FPGA alone can handle sensor protocols without a processor, which is useful for high-speed, deterministic applications.
+
+**Q: How is the baud rate calculated?**  
+**A:** `BAUD_DIV = CLK_FREQ / BAUD_RATE = 100,000,000 / 9600 = 10,416`. The UART divider counts to 10,416 before generating each bit timing tick.
+
+**Q: What happens if I press trigger while transmission is in progress?**  
+**A:** The FSM ignores the trigger signal when not in IDLE state. The design uses state-based control to prevent re-triggering during active transactions.
+
+**Q: Can this read from a real temperature sensor?**  
+**A:** Yes, with modifications. Replace the `i2c_slave_dummy` module with connections to external I²C sensor pins (like LM75 or TMP102). Ensure proper voltage levels and pull-ups are used.
+
+---
+
+### Final Verification Checklist
+
+Before leaving the lab or demonstrating the project:
+
+- ✅ Bitstream programmed successfully
+- ✅ External 4.7kΩ pull-up resistors connected on SDA and SCL
+- ✅ Serial terminal configured at 9600 baud, 8N1, no flow control
+- ✅ Output displays "Temp = 25" when trigger is pressed
+- ✅ Screenshots taken of:
+  - Vivado project hierarchy
+  - Implementation reports (timing, utilization)
+  - Serial terminal output
+  - GTKWave simulation waveforms (if available)
+- ✅ Wiring diagram documented
+- ✅ XDC file saved and backed up
+
+---
+
+### Resource Utilization
+
+Typical resource usage on xc7z020 (from implementation reports):
+
+| Resource        | Used | Available | Utilization |
+| --------------- | ---- | --------- | ----------- |
+| Slice LUTs      | ~450 | 53,200    | <1%         |
+| Slice Registers | ~280 | 106,400   | <1%         |
+| I/O             | 6    | 200       | 3%          |
+| BUFG            | 1    | 32        | 3%          |
+
+**Note:** This is a very small design suitable for educational purposes. Plenty of resources remain for expansion.
+
+---
+
+### Troubleshooting Hardware Issues
+
+#### LED Indicators (if added)
+
+For easier debugging, you can add LED indicators to the XDC and modify the top module:
+
+```xdc
+# Optional: Status LEDs
+set_property PACKAGE_PIN T22 [get_ports led_i2c_busy]     # LD0
+set_property PACKAGE_PIN T21 [get_ports led_uart_busy]    # LD1
+set_property IOSTANDARD LVCMOS33 [get_ports led_i2c_busy]
+set_property IOSTANDARD LVCMOS33 [get_ports led_uart_busy]
+```
+
+Add to top module:
+
+```verilog
+output wire led_i2c_busy,
+output wire led_uart_busy
+
+assign led_i2c_busy = i2c_busy;
+assign led_uart_busy = uart_busy;
+```
+
+This helps visualize when each module is active.
+
+#### Logic Analyzer / ILA
+
+For advanced debugging, insert an Integrated Logic Analyzer (ILA):
+
+1. In Vivado, **Tools** → **Set up Debug**
+2. Select critical signals: `scl`, `sda`, `state`, `uart_tx`
+3. Re-run implementation and generate bitstream
+4. Use **Hardware Manager** to capture live waveforms
+
+---
+
+### Extension Ideas
+
+Once the basic project works, consider these enhancements:
+
+1. **Variable Temperature:**
+
+   - Add up/down buttons to change temperature value
+   - Display range: 0-99°C
+
+2. **Multiple Sensors:**
+
+   - Implement multiple I²C slaves with different addresses
+   - Read and display values from each
+
+3. **LCD Display:**
+
+   - Add 16×2 character LCD via I²C (PCF8574 expander)
+   - Display temperature locally without PC
+
+4. **Real Sensor Integration:**
+
+   - Connect actual LM75/TMP102 sensor
+   - Read real temperature from environment
+
+5. **Data Logging:**
+
+   - Store readings in block RAM
+   - Transmit history when requested
+
+6. **Error Handling:**
+   - Detect and report I²C NAK errors
+   - Add timeout mechanisms
+   - Display error messages on UART
+
+---
+
+### Conclusion
+
+This hardware implementation guide provides everything needed to successfully deploy the sensor hub project on a ZedBoard. The design demonstrates:
+
+- **Protocol Implementation:** I²C master and slave with proper timing
+- **Interface Design:** UART communication with PC
+- **FSM Control:** Clean state-based operation
+- **FPGA Utilization:** Efficient use of programmable logic
+
+The project serves as an excellent foundation for understanding sensor interfacing, serial protocols, and FPGA-based system design.
+
+---
+
 ## Project Context
 
 This project is part of a digital design course under the Phoenix Association focusing on serial communication protocols (I²C, UART, SPI) and FPGA implementation. The goal is to understand:
@@ -635,3 +1164,4 @@ This project is part of a digital design course under the Phoenix Association fo
 - FSM-based protocol implementation
 - Testbench development and waveform analysis
 - Vivado simulation and synthesis workflow
+- Hardware deployment on industry-standard FPGA boards
