@@ -37,7 +37,6 @@ This repository implements a Verilog-based sensor-hub simulator where an FPGA re
 ### Step-by-Step Data Flow
 
 1. **I²C Read Transaction** (`i2c_slave_dummy.v`)
-
    - Master sends START condition
    - Master transmits slave address (0x48) + Read bit
    - Slave acknowledges (ACK)
@@ -46,14 +45,12 @@ This repository implements a Verilog-based sensor-hub simulator where an FPGA re
    - Master sends STOP condition
 
 2. **Binary to ASCII Conversion** (`ascii_encoder.v`)
-
    - Input: 8-bit binary value (25 = 0x19)
    - Tens digit: 25 ÷ 10 = 2 → ASCII '2' (0x32)
    - Ones digit: 25 % 10 = 5 → ASCII '5' (0x35)
    - Output: Two ASCII characters
 
 3. **String Building** (`buildstring.v`)
-
    - Constructs complete message: "Temp = 25\r\n"
    - Character sequence: 'T', 'e', 'm', 'p', ' ', '=', ' ', '2', '5', '\r', '\n'
    - Selects character based on index input
@@ -97,13 +94,11 @@ WAIT_ACK  → Waiting for master's ACK
   - These are detected independently of SCL edges
 
 - **Open-Drain Signaling:**
-
   - `sda_oe` (output enable) controls when slave pulls SDA low
   - When `sda_oe = 1`, slave pulls SDA to 0 (ACK or data bit = 0)
   - When `sda_oe = 0`, SDA is released (high-impedance, pulled high by external resistor)
 
 - **Address Matching:**
-
   - Slave address: 0x48 (7 bits)
   - Compares received address with `SLAVE_ADDR`
   - Only responds if address matches
@@ -384,7 +379,6 @@ gtkwave uart_tx.vcd
   - [I²C Intermediate](https://youtu.be/_bReVnQsiwg?si=isv9t6BjJJO4ykR2)
   - [I²C Implementation Playlist](https://youtube.com/playlist?list=PLIA9XWvqXXMzzO0g6bZTEtjTBv6sbKYpN&si=A2Mh8u2Ojac_JWYw)
 - **UART:**
-
   - [UART Basics](https://youtu.be/NAYc1SoXGbQ?si=thPU9YME6vx897vg)
   - [UART Implementation Playlist](https://youtube.com/playlist?list=PLqPfWwayuBvPNEejEgA82Xq_n4gk8f0Kk&si=I4ECgYkW_tOOslzc)
   - [UART TX/RX Design](https://youtu.be/L62Ev3KOpFo?si=QSoAhtZv_DDi0Vew)
@@ -650,6 +644,113 @@ This section provides a complete guide to implementing this project on the **Zyn
   - One for SCL line → 3.3V
 
 Without these pull-ups, the I²C bus will not function correctly due to the open-drain nature of I²C.
+
+---
+
+### Pre-Flight Checklist
+
+Before starting hardware implementation, ensure you have:
+
+- ✅ **Vivado Design Suite installed and licensed** (WebPACK edition is sufficient)
+- ✅ **Board drivers installed** (Xilinx Cable Drivers for JTAG programming)
+- ✅ **ZedBoard powers on** (check LD12 power LED - should be solid blue/green)
+- ✅ **USB cables functional** (data cables, not charging-only cables)
+  - One USB Mini-B for JTAG programming
+  - One USB Micro-B for UART communication
+- ✅ **Terminal software installed** (PuTTY, screen, or minicom)
+- ✅ **Pull-up resistors acquired** (2× 4.7kΩ resistors, 1/4W or 1/8W)
+- ✅ **Jumper wires** (if using breadboard for pull-up connections)
+- ✅ **Breadboard** (optional, for easier pull-up resistor connections)
+
+---
+
+### Safety & Best Practices
+
+⚠️ **IMPORTANT: Read Before Connecting Hardware**
+
+#### ESD Protection
+
+- **Use an anti-static wrist strap** when handling the board
+- Touch a grounded metal surface before handling FPGA board
+- Work on anti-static mat if available
+- Store board in anti-static bag when not in use
+- **Never touch pins while board is powered**
+
+#### Power-On Sequence
+
+1. **First:** Connect USB cables (JTAG and UART)
+2. **Second:** Verify connections are secure
+3. **Third:** Power on board using SW8 switch
+4. **Never:** Hot-plug USB cables while board is powered
+
+#### PMOD Connection Safety
+
+- ⚠️ **NEVER connect or disconnect PMOD pins while board is powered**
+- ⚠️ **NEVER apply voltage >3.3V to any PMOD pin**
+- Always power off board before making PMOD connections
+- Double-check wiring before powering on
+- Use a multimeter to verify no short circuits before power-on
+
+#### General Guidelines
+
+- Keep liquids away from the board
+- Ensure adequate ventilation (board may get warm during operation)
+- Don't cover or block the heatsink on the Zynq chip
+- Use regulated 12V power supply (included with board)
+- Check for loose components or damaged traces before use
+
+---
+
+### Common Beginner Mistakes
+
+**❌ Forgetting to press RESET after programming**
+
+- **Solution:** Always press the center button (BTNC) after programming the FPGA
+- The design requires a reset pulse to initialize all FSMs to their IDLE states
+
+**❌ Using wrong USB cable (charging vs data)**
+
+- **Symptom:** Device not detected in Vivado Hardware Manager or Device Manager
+- **Solution:** Verify cables support data transfer (check with another device first)
+- Both JTAG and UART ports require data-capable USB cables
+
+**❌ Incorrect board jumper positions**
+
+- **Symptom:** No clock signal, board doesn't program, or random behavior
+- **Solution:** Check jumpers JP7-JP11 are in default positions (see ZedBoard manual page 18)
+- Jumper JP7 should select "JTAG" mode
+- Clock source jumpers should route 100 MHz oscillator to PL
+
+**❌ Confusing PS (Processing System) vs PL (Programmable Logic)**
+
+- **This project uses PL ONLY** - no ARM processor involvement
+- Don't try to create a Zynq PS+PL design in Vivado
+- Select "RTL Project" not "Zynq Project"
+- Only the FPGA fabric is used; ignore PS-related wizards
+
+**❌ Missing or incorrect pull-up resistors**
+
+- **Symptom:** I²C communication fails, no data output
+- **Solution:** Must have 4.7kΩ resistors from SDA→3.3V and SCL→3.3V
+- Verify connections with multimeter (should read ~3.3V on idle bus)
+
+**❌ Wrong serial port in terminal**
+
+- **Symptom:** No output in terminal, even though FPGA is programmed
+- **Solution:** Check Device Manager (Windows) or `ls /dev/tty*` (macOS/Linux)
+- The UART port is **different** from the JTAG port
+
+**❌ Not setting the top module**
+
+- **Symptom:** Synthesis fails with "no top module found"
+- **Solution:** Right-click on `sensor_hub_top` module and select "Set as Top"
+- Note: File is named `sensor_hub_complete.v`, but module is `sensor_hub_top`
+
+**❌ Attempting to run without trigger**
+
+- **Symptom:** "Nothing happens after programming"
+- **Solution:** Press RESET (BTNC), then press TRIGGER (BTNR) to start transmission
+- Design is event-driven, not continuous
 
 ---
 
@@ -983,26 +1084,22 @@ If the output doesn't appear or is incorrect, check the following:
 **Key Points to Emphasize:**
 
 1. **I²C Protocol Implementation:**
-
    - Open-drain signaling (never drive high, only pull low or release)
    - START condition: SDA falls while SCL is high
    - STOP condition: SDA rises while SCL is high
    - ACK/NACK mechanism for handshaking
 
 2. **Dummy Slave Behavior:**
-
    - Returns fixed temperature (25°C)
    - Simplification: ignores master ACK after data transmission
    - Real sensor would support multiple reads and temperature updates
 
 3. **UART Framing:**
-
    - Asynchronous communication (no shared clock)
    - Start bit (0), 8 data bits (LSB first), stop bit (1)
    - Baud rate generator ensures accurate timing
 
 4. **FSM-Based Design:**
-
    - Clear state transitions
    - One-shot pulse generators for control signals
    - Prevents multiple triggers per event
@@ -1118,27 +1215,22 @@ For advanced debugging, insert an Integrated Logic Analyzer (ILA):
 Once the basic project works, consider these enhancements:
 
 1. **Variable Temperature:**
-
    - Add up/down buttons to change temperature value
    - Display range: 0-99°C
 
 2. **Multiple Sensors:**
-
    - Implement multiple I²C slaves with different addresses
    - Read and display values from each
 
 3. **LCD Display:**
-
    - Add 16×2 character LCD via I²C (PCF8574 expander)
    - Display temperature locally without PC
 
 4. **Real Sensor Integration:**
-
    - Connect actual LM75/TMP102 sensor
    - Read real temperature from environment
 
 5. **Data Logging:**
-
    - Store readings in block RAM
    - Transmit history when requested
 
