@@ -3,190 +3,6 @@
 // Mini Project 1 : Sensor Hub Simulator
 // Correct FSM-based I2C Master + Dummy Slave + UART
 // ============================================================================
-
-/* ===================== ASCII ENCODER ===================== */
-module ascii_encoder(
-    input  wire [7:0] value,
-    output wire [7:0] tens_ascii,
-    output wire [7:0] ones_ascii
-);
-    assign tens_ascii = 8'd48 + (value / 10);
-    assign ones_ascii = 8'd48 + (value % 10);
-endmodule
-
-
-/* ===================== STRING BUILDER ===================== */
-module buildstring(
-    input  wire [7:0] value,
-    input  wire [3:0] index,
-    output reg  [7:0] char_out
-);
-    wire [7:0] t, o;
-    ascii_encoder enc(.value(value), .tens_ascii(t), .ones_ascii(o));
-
-    always @(*) begin
-        case (index)
-            4'd0:  char_out = "T";
-            4'd1:  char_out = "e";
-            4'd2:  char_out = "m";
-            4'd3:  char_out = "p";
-            4'd4:  char_out = " ";
-            4'd5:  char_out = "=";
-            4'd6:  char_out = " ";
-            4'd7:  char_out = t;
-            4'd8:  char_out = o;
-            4'd9:  char_out = 8'h0D;
-            4'd10: char_out = 8'h0A;
-            default: char_out = 8'h00;
-        endcase
-    end
-endmodule
-
-
-/* ===================== UART TX ===================== */
-module uart_tx #(
-    parameter CLK_FREQ = 100_000_000,
-    parameter BAUD     = 9600
-)(
-    input  wire clk,
-    input  wire rst,
-    input  wire start,
-    input  wire [7:0] data,
-    output reg  tx,
-    output reg  busy
-);
-    localparam DIV = CLK_FREQ / BAUD;
-    reg [$clog2(DIV)-1:0] cnt;
-    reg tick;
-
-    always @(posedge clk) begin
-        if (rst) begin cnt <= 0; tick <= 0; end
-        else begin
-            cnt  <= (cnt == DIV-1) ? 0 : cnt + 1;
-            tick <= (cnt == DIV-1);
-        end
-    end
-
-    reg [9:0] shifter;
-    reg [3:0] bitn;
-
-    always @(posedge clk) begin
-        if (rst) begin
-            tx <= 1'b1; busy <= 1'b0; bitn <= 0;
-        end else if (start && !busy) begin
-            shifter <= {1'b1, data, 1'b0};
-            busy <= 1'b1; bitn <= 0;
-        end else if (busy && tick) begin
-            tx <= shifter[bitn];
-            bitn <= bitn + 1;
-            if (bitn == 9) busy <= 1'b0;
-        end
-    end
-endmodule
-
-
-/* ===================== I2C DUMMY SLAVE ===================== */
-module i2c_slave_dummy(
-    input  wire clk,      // System clock for synchronization
-    input  wire rst,      // Reset
-    input  wire scl,
-    input  wire sda_in,
-    output reg  sda_oe
-);
-    localparam [6:0] SLAVE_ADDR = 7'h48;
-    localparam [7:0] TEMP_DATA  = 8'd25;
-
-    reg [2:0] state;
-    localparam IDLE = 3'd0, ADDR = 3'd1, ACK_ADDR = 3'd2, DATA = 3'd3, WAIT_ACK = 3'd4;
-    
-    reg [7:0] shift;
-    reg [2:0] bit_cnt;
-    reg [7:0] data_reg;
-    
-    // Synchronize SDA for START/STOP detection
-    reg sda_sync1, sda_sync2, sda_sync3;
-    reg scl_sync1, scl_sync2;
-    
-    always @(posedge clk) begin
-        sda_sync1 <= sda_in;
-        sda_sync2 <= sda_sync1;
-        sda_sync3 <= sda_sync2;
-        scl_sync1 <= scl;
-        scl_sync2 <= scl_sync1;
-    end
-    
-    wire start_cond = sda_sync3 && !sda_sync2 && scl_sync2;  // SDA falls while SCL high
-    wire stop_cond  = !sda_sync3 && sda_sync2 && scl_sync2;  // SDA rises while SCL high
-    wire scl_posedge = !scl_sync2 && scl_sync1;
-    wire scl_negedge = scl_sync2 && !scl_sync1;
-
-    always @(posedge clk) begin
-        if (rst) begin
-            state <= IDLE;
-            bit_cnt <= 0;
-            shift <= 0;
-            data_reg <= 0;
-        end else if (start_cond) begin
-            state <= ADDR;
-            bit_cnt <= 0;
-            shift <= 0;
-        end else if (stop_cond) begin
-            state <= IDLE;
-            bit_cnt <= 0;
-        end else if (scl_posedge) begin
-            case (state)
-                ADDR: begin
-                    shift <= {shift[6:0], sda_sync2};
-                    if (bit_cnt == 7) begin
-                        if (shift[7:1] == SLAVE_ADDR && shift[0] == 1'b1)
-                            state <= ACK_ADDR;
-                        else
-                            state <= IDLE;  // Address mismatch
-                        bit_cnt <= 0;
-                    end else
-                        bit_cnt <= bit_cnt + 1;
-                end
-                ACK_ADDR: begin
-                    data_reg <= TEMP_DATA;
-                    state <= DATA;
-                    bit_cnt <= 0;
-                end
-                DATA: begin
-                    if (bit_cnt == 7) begin
-                        state <= WAIT_ACK;
-                        bit_cnt <= 0;
-                    end else
-                        bit_cnt <= bit_cnt + 1;
-                end
-                WAIT_ACK: begin
-                    // NOTE: A real slave would sample SDA here to check master ACK/NACK
-                    // For this dummy sensor, we ignore it and always return to IDLE
-                    // In production: if (sda_sync2 == 1'b0) continue else stop
-                    state <= IDLE;  // Transaction complete
-                end
-            endcase
-        end
-    end
-
-    // SDA output control - only change during SCL low
-    reg sda_oe_reg;
-    
-    always @(posedge clk) begin
-        if (rst)
-            sda_oe_reg <= 0;
-        else if (scl_negedge || !scl_sync2) begin  // Update only when SCL is low
-            case (state)
-                ACK_ADDR: sda_oe_reg <= 1'b1;  // Pull low for ACK
-                DATA:     sda_oe_reg <= (data_reg[7-bit_cnt] == 1'b0);  // Pull low for 0 bits
-                default:  sda_oe_reg <= 1'b0;  // Release (high-Z)
-            endcase
-        end
-    end
-    
-    assign sda_oe = sda_oe_reg;
-endmodule
-
-
 /* ===================== I2C MASTER ===================== */
 module i2c_master(
     input  wire clk,
@@ -388,9 +204,13 @@ module sensor_hub_top(
         .ack_error(i2c_ack_error)
     );
 
+    // External dummy slave (defined in i2c_slave_dummy.v)
+    // This module uses active-low reset `rst_n`.
     i2c_slave_dummy slave(
-        .clk(clk), .rst(rst),
-        .scl(scl), .sda_in(sda_in), .sda_oe(sda_s_oe)
+        .scl(scl),
+        .sda_in(sda_in),
+        .sda_oe(sda_s_oe),
+        .rst_n(~rst)
     );
 
     /* ---- UART + CONTROL FSM ---- */
@@ -403,12 +223,14 @@ module sensor_hub_top(
     
     buildstring bs(.value(temp_latched), .index(idx), .char_out(ch));
 
+    // External UART (uart_tx.v) uses `tx_start` / `tx_data` and exposes `tx_busy`
     uart_tx uart(
-        .clk(clk), .rst(rst),
-        .start(uart_start),
-        .data(ch),
+        .clk(clk),
+        .rst(rst),
+        .tx_start(uart_start),
+        .tx_data(ch),
         .tx(uart_tx),
-        .busy(uart_busy)
+        .tx_busy(uart_busy)
     );
 
     reg [2:0] state;

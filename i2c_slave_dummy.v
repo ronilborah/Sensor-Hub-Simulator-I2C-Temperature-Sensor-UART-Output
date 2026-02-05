@@ -32,8 +32,9 @@ module i2c_slave_dummy (
     assign start_cond = (sda_prev == 1'b1) && (sda_in == 1'b0) && (scl == 1'b1);
     assign stop_cond  = (sda_prev == 1'b0) && (sda_in == 1'b1) && (scl == 1'b1);
 
-    // Track SDA transitions (not tied to SCL!)
-    always @(posedge sda_in or negedge sda_in or negedge rst_n) begin
+    // Track SDA transitions sampled synchronously to SCL.
+    // Avoid using posedge/negedge of SDA as a clock (unsupported in FPGA).
+    always @(posedge scl or negedge rst_n) begin
         if (!rst_n)
             sda_prev <= 1'b1;
         else
